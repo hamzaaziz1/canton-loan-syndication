@@ -1,0 +1,158 @@
+module Test.Syndicate where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.List (sort)
+import Syndication.Facility
+import Syndication.Syndicate
+import Syndication.Allocation
+import Test.Setup
+
+data Invited = Invited with
+    parties    : Parties
+    mandateCid : ContractId Mandate
+    bookCid    : ContractId SyndicateBook
+    invA       : ContractId LenderInvitation
+    invB       : ContractId LenderInvitation
+
+data ClosedBook = ClosedBook with
+    parties        : Parties
+    facilityCid    : ContractId FacilityAgreement
+    participations : [ContractId Participation]
+
+inviteLenders : Script Invited
+inviteLenders = do
+  p <- setupParties
+
+  reqCid <- submit p.borrower do
+    createCmd MandateRequest with
+      borrower = p.borrower
+      agent    = p.agent
+      terms    = sampleTerms
+
+  -- two roots in one transaction: the borrower is an informee of Accept only
+  (mandateCid, bookCid) <- submit p.agent do
+    m <- exerciseCmd reqCid Accept
+    b <- createCmd SyndicateBook with
+      agent = p.agent
+      terms = sampleTerms
+    pure (m, b)
+
+  invA <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderA
+  invB <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderB
+
+  pure Invited with
+    parties    = p
+    mandateCid = mandateCid
+    bookCid    = bookCid
+    invA       = invA
+    invB       = invB
+
+closeBook : Script ClosedBook
+closeBook = do
+  inv <- inviteLenders
+  let p = inv.parties
+
+  -- oversubscribed: 110m committed against a 100m target
+  comA <- submit p.lenderA do exerciseCmd inv.invA Commit with amount = 60000000.0
+  comB <- submit p.lenderB do exerciseCmd inv.invB Commit with amount = 50000000.0
+
+  -- scale back to 100m in one atomic close
+  (facilityCid, participations) <- submit p.agent do
+    exerciseCmd inv.bookCid Close with
+      mandateCid  = inv.mandateCid
+      allocations = [(comA, 55000000.0), (comB, 45000000.0)]
+
+  pure ClosedBook with
+    parties        = p
+    facilityCid    = facilityCid
+    participations = participations
+
+test_open_book_visibility : Script ()
+test_open_book_visibility = do
+  inv <- inviteLenders
+  let p = inv.parties
+
+  -- the book is agent-only, even though it was created in the same
+  -- transaction as the borrower's mandate
+  borrowerBooks <- query @SyndicateBook p.borrower
+  borrowerBooks === []
+
+  -- each lender sees only its own invitation
+  aInvs <- query @LenderInvitation p.lenderA
+  map fst aInvs === [inv.invA]
+  bInvs <- query @LenderInvitation p.lenderB
+  map fst bInvs === [inv.invB]
+  borrowerInvs <- query @LenderInvitation p.borrower
+  borrowerInvs === []
+
+  _ <- submit p.lenderA do exerciseCmd inv.invA Commit with amount = 60000000.0
+  _ <- submit p.lenderB do exerciseCmd inv.invB Commit with amount = 50000000.0
+
+  -- each lender sees only its own commitment, the borrower sees none
+  aComs <- query @Commitment p.lenderA
+  map (\(_, c) -> c.amount) aComs === [60000000.0]
+  bComs <- query @Commitment p.lenderB
+  map (\(_, c) -> c.amount) bComs === [50000000.0]
+  borrowerComs <- query @Commitment p.borrower
+  borrowerComs === []
+
+test_close_book_visibility : Script ()
+test_close_book_visibility = do
+  cb <- closeBook
+  let p = cb.parties
+
+  -- each lender sees exactly its own allocation
+  aParts <- query @Participation p.lenderA
+  map (\(_, x) -> x.amount) aParts === [55000000.0]
+  bParts <- query @Participation p.lenderB
+  map (\(_, x) -> x.amount) bParts === [45000000.0]
+
+  -- the agent sees both
+  agentParts <- query @Participation p.agent
+  sort (map (\(_, x) -> x.amount) agentParts) === [45000000.0, 55000000.0]
+
+  -- the borrower sees the facility total and nothing about the split
+  borrowerFacs <- query @FacilityAgreement p.borrower
+  map (\(_, x) -> x.facilityAmount) borrowerFacs === [100000000.0]
+  borrowerParts <- query @Participation p.borrower
+  borrowerParts === []
+
+  -- lenders never see the borrower's side
+  lenderFacs <- query @FacilityAgreement p.lenderA
+  lenderFacs === []
+
+  -- Close consumed every commitment
+  agentComs <- query @Commitment p.agent
+  agentComs === []
+
+test_syndicate_authorisation : Script ()
+test_syndicate_authorisation = do
+  inv <- inviteLenders
+  let p = inv.parties
+
+  -- lenderA cannot commit on lenderB's invitation: to lenderA it does not exist
+  submitMustFail p.lenderA do exerciseCmd inv.invB Commit with amount = 1.0
+
+  -- the agent cannot commit on a lender's behalf
+  submitMustFail p.agent do exerciseCmd inv.invA Commit with amount = 1.0
+
+  comA <- submit p.lenderA do exerciseCmd inv.invA Commit with amount = 60000000.0
+
+  -- scale up is rejected
+  submitMustFail p.agent do
+    exerciseCmd inv.bookCid Close with
+      mandateCid  = inv.mandateCid
+      allocations = [(comA, 70000000.0)]
+
+  -- a lender cannot close the book
+  submitMustFail p.lenderA do
+    exerciseCmd inv.bookCid Close with
+      mandateCid  = inv.mandateCid
+      allocations = [(comA, 60000000.0)]
+
+  -- an empty close is rejected
+  submitMustFail p.agent do
+    exerciseCmd inv.bookCid Close with
+      mandateCid  = inv.mandateCid
+      allocations = []
