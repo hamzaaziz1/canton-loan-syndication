@@ -1,0 +1,28 @@
+# daml build output
+.daml/
+
+# canton runtime and secrets
+canton/certs/
+log/
+*.log
+*.key
+*.pem
+
+# java
+target/
+build/
+.gradle/
+
+# node
+node_modules/
+ui/dist/
+
+# env
+.env
+!.env.example
+
+# editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
