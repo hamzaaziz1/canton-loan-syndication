@@ -3,7 +3,6 @@ module Test.Facility where
 import Daml.Script
 import DA.Assert ((===))
 import DA.Optional (fromSomeNote)
-import Syndication.Types
 import Syndication.Facility
 import Test.Setup
 

@@ -1,0 +1,106 @@
+module Syndication.Syndicate where
+
+import Syndication.Types
+import Syndication.Facility
+import Syndication.Allocation
+
+-- Agent-only root. The borrower is not a stakeholder, so nothing exercised
+-- here is visible to the borrower unless it reaches a contract the borrower signed.
+template SyndicateBook
+  with
+    agent : Party
+    terms : FacilityTerms
+  where
+    signatory agent
+
+    -- non-consuming: the book stays open while invitations go out
+    nonconsuming choice Invite : ContractId LenderInvitation
+      with
+        lender : Party
+      controller agent
+      do
+        assertMsg "agent cannot invite itself" (lender /= agent)
+        create LenderInvitation with
+          agent  = agent
+          lender = lender
+          terms  = terms
+
+    -- One transaction, three projections. Each Allocate is visible only to the
+    -- agent and that lender. Execute is visible to the agent and the borrower,
+    -- and carries the total only.
+    choice Close : (ContractId FacilityAgreement, [ContractId Participation])
+      with
+        mandateCid  : ContractId Mandate
+        allocations : [(ContractId Commitment, Decimal)]
+      controller agent
+      do
+        assertMsg "no allocations" (allocations /= [])
+        let total = sum (map snd allocations)
+        let allocate (cid, amt) =
+              exercise cid Allocate with
+                allocated      = amt
+                facilityAmount = total
+        participations <- mapA allocate allocations
+        facilityCid <- exercise mandateCid Execute with committedTotal = total
+        pure (facilityCid, participations)
+
+template LenderInvitation
+  with
+    agent  : Party
+    lender : Party
+    terms  : FacilityTerms
+  where
+    signatory agent
+    observer lender
+
+    choice Commit : ContractId Commitment
+      with
+        amount : Decimal
+      controller lender
+      do
+        assertMsg "commitment must be positive" (amount > 0.0)
+        assertMsg "commitment exceeds facility size" (amount <= terms.totalAmount)
+        create Commitment with
+          agent      = agent
+          lender     = lender
+          facilityId = terms.facilityId
+          currency   = terms.currency
+          amount     = amount
+
+    choice Decline : ()
+      controller lender
+      do pure ()
+
+-- Signed by agent (from the invitation) and lender (as controller of Commit).
+template Commitment
+  with
+    agent      : Party
+    lender     : Party
+    facilityId : Text
+    currency   : Currency
+    amount     : Decimal
+  where
+    signatory agent, lender
+
+    ensure amount > 0.0
+
+    -- scale back is allowed, scale up is not
+    choice Allocate : ContractId Participation
+      with
+        allocated      : Decimal
+        facilityAmount : Decimal
+      controller agent
+      do
+        assertMsg "allocation must be positive" (allocated > 0.0)
+        assertMsg "cannot allocate more than committed" (allocated <= amount)
+        create Participation with
+          agent          = agent
+          lender         = lender
+          facilityId     = facilityId
+          currency       = currency
+          amount         = allocated
+          facilityAmount = facilityAmount
+
+    choice WithdrawCommitment : ()
+      controller lender
+      do pure ()

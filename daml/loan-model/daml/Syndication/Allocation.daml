@@ -1,0 +1,18 @@
+module Syndication.Allocation where
+
+import Syndication.Types
+
+-- One per lender. Signed by agent and lender only. The borrower and the
+-- other lender are not stakeholders, so their nodes never receive it.
+template Participation
+  with
+    agent          : Party
+    lender         : Party
+    facilityId     : Text
+    currency       : Currency
+    amount         : Decimal
+    facilityAmount : Decimal
+  where
+    signatory agent, lender
+
+    ensure amount > 0.0 && amount <= facilityAmount
