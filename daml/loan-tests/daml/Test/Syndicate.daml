@@ -31,12 +31,11 @@ inviteLenders = do
       terms    = sampleTerms
 
   -- two roots in one transaction: the borrower is an informee of Accept only
-  (mandateCid, bookCid) <- submit p.agent do
-    m <- exerciseCmd reqCid Accept
-    b <- createCmd SyndicateBook with
-      agent = p.agent
-      terms = sampleTerms
-    pure (m, b)
+  let book = SyndicateBook with
+        agent = p.agent
+        terms = sampleTerms
+  (mandateCid, bookCid) <- submit p.agent $
+    (,) <$> exerciseCmd reqCid Accept <*> createCmd book
 
   invA <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderA
   invB <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderB
