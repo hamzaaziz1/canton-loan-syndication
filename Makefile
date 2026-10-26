@@ -1,5 +1,7 @@
 .RECIPEPREFIX = >
-.PHONY: build test clean
+.PHONY: build test clean up down reset ps logs
+
+COMPOSE = docker compose -f infra/docker-compose.yml
 
 build:
 > dpm build --all
@@ -9,3 +11,19 @@ test: build
 
 clean:
 > rm -rf daml/*/.daml
+
+up:
+> $(COMPOSE) up -d
+
+down:
+> $(COMPOSE) down
+
+# wipes all ledger state, including node identities
+reset:
+> $(COMPOSE) down -v
+
+ps:
+> $(COMPOSE) ps
+
+logs:
+> $(COMPOSE) logs -f --tail=100
