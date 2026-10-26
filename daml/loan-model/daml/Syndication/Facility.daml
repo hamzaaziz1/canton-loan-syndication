@@ -1,0 +1,70 @@
+module Syndication.Facility where
+
+import Syndication.Types
+
+-- Borrower asks AgentBank to arrange a facility.
+-- Only the borrower signs, so only the borrower can create it.
+template MandateRequest
+  with
+    borrower : Party
+    agent    : Party
+    terms    : FacilityTerms
+  where
+    signatory borrower
+    observer agent
+
+    ensure terms.totalAmount > 0.0 && terms.marginBps >= 0
+
+    -- consuming by default: accepting archives the request, so it can't be accepted twice
+    choice Accept : ContractId Mandate
+      controller agent
+      do
+        create Mandate with
+          borrower = borrower
+          agent    = agent
+          terms    = terms
+
+    choice Reject : ()
+      with
+        reason : Text
+      controller agent
+      do pure ()
+
+    choice Withdraw : ()
+      controller borrower
+      do pure ()
+
+-- Signed by both. Created inside Accept, where the borrower's signature
+-- comes from the request and the agent's from being the controller.
+template Mandate
+  with
+    borrower : Party
+    agent    : Party
+    terms    : FacilityTerms
+  where
+    signatory borrower, agent
+
+    -- Called from SyndicateBook.Close with the total only, never the per-lender split.
+    choice Execute : ContractId FacilityAgreement
+      with
+        committedTotal : Decimal
+      controller agent
+      do
+        assertMsg "committed total must be positive" (committedTotal > 0.0)
+        assertMsg "committed total exceeds mandate" (committedTotal <= terms.totalAmount)
+        create FacilityAgreement with
+          borrower       = borrower
+          agent          = agent
+          terms          = terms
+          facilityAmount = committedTotal
+
+template FacilityAgreement
+  with
+    borrower       : Party
+    agent          : Party
+    terms          : FacilityTerms
+    facilityAmount : Decimal
+  where
+    signatory borrower, agent
+
+    ensure facilityAmount > 0.0 && facilityAmount <= terms.totalAmount
