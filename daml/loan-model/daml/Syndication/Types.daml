@@ -1,0 +1,12 @@
+module Syndication.Types where
+
+data Currency = GBP | USD | EUR
+  deriving (Eq, Show)
+
+data FacilityTerms = FacilityTerms with
+    facilityId  : Text
+    currency    : Currency
+    totalAmount : Decimal
+    marginBps   : Int
+    maturity    : Date
+  deriving (Eq, Show)
