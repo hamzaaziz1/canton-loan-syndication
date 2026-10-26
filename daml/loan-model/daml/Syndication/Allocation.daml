@@ -2,8 +2,8 @@ module Syndication.Allocation where
 
 import Syndication.Types
 
--- One per lender. Signed by agent and lender only. The borrower and the
--- other lender are not stakeholders, so their nodes never receive it.
+-- Everything in this module has exactly the agent and one lender as stakeholders.
+
 template Participation
   with
     agent          : Party
@@ -16,3 +16,74 @@ template Participation
     signatory agent, lender
 
     ensure amount > 0.0 && amount <= facilityAmount
+
+    -- non-consuming: one participation serves every drawdown and repayment
+    nonconsuming choice CallFunds : ContractId FundingCall
+      with
+        drawdownRef    : Text
+        drawdownAmount : Decimal
+      controller agent
+      do
+        assertMsg "drawdown must be positive" (drawdownAmount > 0.0)
+        assertMsg "drawdown exceeds facility" (drawdownAmount <= facilityAmount)
+        create FundingCall with
+          agent       = agent
+          lender      = lender
+          facilityId  = facilityId
+          currency    = currency
+          drawdownRef = drawdownRef
+          amount      = drawdownAmount * amount / facilityAmount
+
+    nonconsuming choice Distribute : ContractId Distribution
+      with
+        repaymentRef : Text
+        principal    : Decimal
+        interest     : Decimal
+      controller agent
+      do
+        assertMsg "nothing to distribute" (principal + interest > 0.0)
+        create Distribution with
+          agent        = agent
+          lender       = lender
+          facilityId   = facilityId
+          currency     = currency
+          repaymentRef = repaymentRef
+          principal    = principal * amount / facilityAmount
+          interest     = interest * amount / facilityAmount
+
+template FundingCall
+  with
+    agent       : Party
+    lender      : Party
+    facilityId  : Text
+    currency    : Currency
+    drawdownRef : Text
+    amount      : Decimal
+  where
+    signatory agent
+    observer lender
+
+    ensure amount > 0.0
+
+    choice ConfirmFunded : ()
+      controller lender
+      do pure ()
+
+template Distribution
+  with
+    agent        : Party
+    lender       : Party
+    facilityId   : Text
+    currency     : Currency
+    repaymentRef : Text
+    principal    : Decimal
+    interest     : Decimal
+  where
+    signatory agent
+    observer lender
+
+    ensure principal >= 0.0 && interest >= 0.0
+
+    choice ConfirmReceipt : ()
+      controller lender
+      do pure ()

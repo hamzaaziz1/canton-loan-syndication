@@ -1,0 +1,72 @@
+module Test.Funding where
+
+import Daml.Script
+import DA.Assert ((===))
+import Syndication.Facility
+import Syndication.Allocation
+import Test.Syndicate
+
+test_funding_and_distribution : Script ()
+test_funding_and_distribution = do
+  cb <- closeBook
+  let p = cb.parties
+
+  (partA, partB) <- case cb.participations of
+    [a, b] -> pure (a, b)
+    _      -> abort "expected two participations"
+
+  reqCid <- submit p.borrower do
+    exerciseCmd cb.facilityCid RequestDrawdown with amount = 30000000.0
+
+  let approve = Approve with facilityCid = cb.facilityCid
+      call = CallFunds with
+        drawdownRef    = "FAC-001/DD-1"
+        drawdownAmount = 30000000.0
+
+  -- three roots, one transaction: the borrower is an informee of Approve only,
+  -- each lender only of its own CallFunds
+  ((fac1, _), callA, callB) <- submit p.agent $
+    (,,) <$> exerciseCmd reqCid approve
+         <*> exerciseCmd partA call
+         <*> exerciseCmd partB call
+
+  -- 55/45 split of 30m
+  aCalls <- query @FundingCall p.lenderA
+  map (\(_, c) -> c.amount) aCalls === [16500000.0]
+  bCalls <- query @FundingCall p.lenderB
+  map (\(_, c) -> c.amount) bCalls === [13500000.0]
+  borrowerCalls <- query @FundingCall p.borrower
+  borrowerCalls === []
+
+  -- lenderA cannot confirm lenderB's call, or issue calls to itself
+  submitMustFail p.lenderA do exerciseCmd callB ConfirmFunded
+  submitMustFail p.lenderA do exerciseCmd partA call
+
+  submit p.lenderA do exerciseCmd callA ConfirmFunded
+  submit p.lenderB do exerciseCmd callB ConfirmFunded
+
+  noteCid <- submit p.borrower do
+    exerciseCmd fac1 NotifyRepayment with
+      principal = 10000000.0
+      interest  = 250000.0
+
+  let ack = Acknowledge with facilityCid = fac1
+      dist = Distribute with
+        repaymentRef = "FAC-001/RP-1"
+        principal    = 10000000.0
+        interest     = 250000.0
+
+  (_, distA, distB) <- submit p.agent $
+    (,,) <$> exerciseCmd noteCid ack
+         <*> exerciseCmd partA dist
+         <*> exerciseCmd partB dist
+
+  aDists <- query @Distribution p.lenderA
+  map (\(_, d) -> (d.principal, d.interest)) aDists === [(5500000.0, 137500.0)]
+  bDists <- query @Distribution p.lenderB
+  map (\(_, d) -> (d.principal, d.interest)) bDists === [(4500000.0, 112500.0)]
+  borrowerDists <- query @Distribution p.borrower
+  borrowerDists === []
+
+  submit p.lenderA do exerciseCmd distA ConfirmReceipt
+  submit p.lenderB do exerciseCmd distB ConfirmReceipt
