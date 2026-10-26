@@ -1,0 +1,31 @@
+module Test.Setup where
+
+import Daml.Script
+import DA.Date (date, Month(..))
+import Syndication.Types
+
+data Parties = Parties with
+    borrower : Party
+    agent    : Party
+    lenderA  : Party
+    lenderB  : Party
+
+setupParties : Script Parties
+setupParties = do
+  borrower <- allocateParty "Borrower"
+  agent    <- allocateParty "AgentBank"
+  lenderA  <- allocateParty "LenderA"
+  lenderB  <- allocateParty "LenderB"
+  pure Parties with
+    borrower = borrower
+    agent    = agent
+    lenderA  = lenderA
+    lenderB  = lenderB
+
+sampleTerms : FacilityTerms
+sampleTerms = FacilityTerms with
+  facilityId  = "FAC-001"
+  currency    = GBP
+  totalAmount = 100000000.0
+  marginBps   = 250
+  maturity    = date 2031 Dec 31

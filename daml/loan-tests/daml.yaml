@@ -1,0 +1,12 @@
+sdk-version: 3.6.3
+name: loan-tests
+version: 0.1.0
+source: daml
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+data-dependencies:
+  - ../loan-model/.daml/dist/loan-model-0.1.0.dar
+build-options:
+  - --target=2.3

@@ -1,2 +1,3 @@
 packages:
   - ./daml/loan-model
+  - ./daml/loan-tests

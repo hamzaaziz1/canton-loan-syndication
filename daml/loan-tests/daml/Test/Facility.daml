@@ -1,0 +1,72 @@
+module Test.Facility where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.Optional (fromSomeNote)
+import Syndication.Types
+import Syndication.Facility
+import Test.Setup
+
+test_mandate_happy_path : Script ()
+test_mandate_happy_path = do
+  p <- setupParties
+
+  reqCid <- submit p.borrower do
+    createCmd MandateRequest with
+      borrower = p.borrower
+      agent    = p.agent
+      terms    = sampleTerms
+
+  mandateCid <- submit p.agent do exerciseCmd reqCid Accept
+
+  -- Accept is consuming, so the request no longer exists
+  gone <- queryContractId p.borrower reqCid
+  gone === None
+
+  facCid <- submit p.agent do
+    exerciseCmd mandateCid Execute with committedTotal = 80000000.0
+
+  fac <- fromSomeNote "borrower should see the facility" <$> queryContractId p.borrower facCid
+  fac.facilityAmount === 80000000.0
+
+  -- lenders are not stakeholders, so their views are empty
+  lenderMandates <- query @Mandate p.lenderA
+  lenderMandates === []
+  lenderFacilities <- query @FacilityAgreement p.lenderB
+  lenderFacilities === []
+
+test_mandate_authorisation : Script ()
+test_mandate_authorisation = do
+  p <- setupParties
+
+  -- the agent cannot forge a mandate: the borrower is a signatory and never authorised it
+  submitMustFail p.agent do
+    createCmd Mandate with
+      borrower = p.borrower
+      agent    = p.agent
+      terms    = sampleTerms
+
+  reqCid <- submit p.borrower do
+    createCmd MandateRequest with
+      borrower = p.borrower
+      agent    = p.agent
+      terms    = sampleTerms
+
+  -- the borrower cannot accept its own request, the agent is the controller
+  submitMustFail p.borrower do exerciseCmd reqCid Accept
+
+  -- lenderA is not a stakeholder, so to lenderA this contract does not exist
+  submitMustFail p.lenderA do exerciseCmd reqCid Reject with reason = "not mine"
+
+  mandateCid <- submit p.agent do exerciseCmd reqCid Accept
+
+  -- committing more than the mandate allows is rejected
+  submitMustFail p.agent do
+    exerciseCmd mandateCid Execute with committedTotal = 150000000.0
+
+  -- ensure blocks invalid terms at create time
+  submitMustFail p.borrower do
+    createCmd MandateRequest with
+      borrower = p.borrower
+      agent    = p.agent
+      terms    = sampleTerms with totalAmount = 0.0
