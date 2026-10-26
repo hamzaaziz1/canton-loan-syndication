@@ -2,8 +2,9 @@ module Syndication.Facility where
 
 import Syndication.Types
 
--- Borrower asks AgentBank to arrange a facility.
--- Only the borrower signs, so only the borrower can create it.
+-- Everything in this module has the borrower as a stakeholder.
+-- Lender-side contracts live in Syndicate and Allocation.
+
 template MandateRequest
   with
     borrower : Party
@@ -34,8 +35,6 @@ template MandateRequest
       controller borrower
       do pure ()
 
--- Signed by both. Created inside Accept, where the borrower's signature
--- comes from the request and the agent's from being the controller.
 template Mandate
   with
     borrower : Party
@@ -57,6 +56,7 @@ template Mandate
           agent          = agent
           terms          = terms
           facilityAmount = committedTotal
+          drawn          = 0.0
 
 template FacilityAgreement
   with
@@ -64,7 +64,121 @@ template FacilityAgreement
     agent          : Party
     terms          : FacilityTerms
     facilityAmount : Decimal
+    drawn          : Decimal
   where
     signatory borrower, agent
 
-    ensure facilityAmount > 0.0 && facilityAmount <= terms.totalAmount
+    ensure facilityAmount > 0.0
+      && facilityAmount <= terms.totalAmount
+      && drawn >= 0.0
+      && drawn <= facilityAmount
+
+    -- non-consuming: several requests can be in flight; availability is
+    -- enforced again when the agent applies the drawdown
+    nonconsuming choice RequestDrawdown : ContractId DrawdownRequest
+      with
+        amount : Decimal
+      controller borrower
+      do
+        assertMsg "drawdown must be positive" (amount > 0.0)
+        assertMsg "exceeds available amount" (amount <= facilityAmount - drawn)
+        create DrawdownRequest with
+          borrower   = borrower
+          agent      = agent
+          facilityId = terms.facilityId
+          amount     = amount
+
+    nonconsuming choice NotifyRepayment : ContractId RepaymentNotice
+      with
+        principal : Decimal
+        interest  : Decimal
+      controller borrower
+      do
+        assertMsg "nothing to repay" (principal + interest > 0.0)
+        create RepaymentNotice with
+          borrower   = borrower
+          agent      = agent
+          facilityId = terms.facilityId
+          principal  = principal
+          interest   = interest
+
+    -- consuming: an "update" archives this version and creates the next one
+    choice ApplyDrawdown : ContractId FacilityAgreement
+      with
+        amount : Decimal
+      controller agent
+      do
+        assertMsg "exceeds available amount" (amount <= facilityAmount - drawn)
+        create this with drawn = drawn + amount
+
+    choice ApplyRepayment : ContractId FacilityAgreement
+      with
+        principal : Decimal
+      controller agent
+      do
+        assertMsg "repays more than drawn" (principal <= drawn)
+        create this with drawn = drawn - principal
+
+template DrawdownRequest
+  with
+    borrower   : Party
+    agent      : Party
+    facilityId : Text
+    amount     : Decimal
+  where
+    signatory borrower
+    observer agent
+
+    ensure amount > 0.0
+
+    choice Approve : (ContractId FacilityAgreement, ContractId Drawdown)
+      with
+        facilityCid : ContractId FacilityAgreement
+      controller agent
+      do
+        fac <- fetch facilityCid
+        assertMsg "wrong facility" (fac.terms.facilityId == facilityId && fac.borrower == borrower)
+        newFac <- exercise facilityCid ApplyDrawdown with amount = amount
+        dd <- create Drawdown with
+          borrower   = borrower
+          agent      = agent
+          facilityId = facilityId
+          amount     = amount
+        pure (newFac, dd)
+
+    choice RejectDrawdown : ()
+      with
+        reason : Text
+      controller agent
+      do pure ()
+
+template Drawdown
+  with
+    borrower   : Party
+    agent      : Party
+    facilityId : Text
+    amount     : Decimal
+  where
+    signatory borrower, agent
+
+template RepaymentNotice
+  with
+    borrower   : Party
+    agent      : Party
+    facilityId : Text
+    principal  : Decimal
+    interest   : Decimal
+  where
+    signatory borrower
+    observer agent
+
+    ensure principal >= 0.0 && interest >= 0.0
+
+    choice Acknowledge : ContractId FacilityAgreement
+      with
+        facilityCid : ContractId FacilityAgreement
+      controller agent
+      do
+        fac <- fetch facilityCid
+        assertMsg "wrong facility" (fac.terms.facilityId == facilityId && fac.borrower == borrower)
+        exercise facilityCid ApplyRepayment with principal = principal

@@ -1,0 +1,52 @@
+module Test.Drawdown where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.Optional (fromSomeNote)
+import Syndication.Facility
+import Test.Syndicate
+
+test_drawdown_and_repayment : Script ()
+test_drawdown_and_repayment = do
+  cb <- closeBook
+  let p = cb.parties
+
+  reqCid <- submit p.borrower do
+    exerciseCmd cb.facilityCid RequestDrawdown with amount = 30000000.0
+
+  (fac1, _) <- submit p.agent do
+    exerciseCmd reqCid Approve with facilityCid = cb.facilityCid
+
+  f1 <- fromSomeNote "facility after drawdown" <$> queryContractId p.borrower fac1
+  f1.drawn === 30000000.0
+
+  -- ApplyDrawdown archived the old version, so its contract id is dead
+  old <- queryContractId p.borrower cb.facilityCid
+  old === None
+
+  -- only 70m left available
+  submitMustFail p.borrower do
+    exerciseCmd fac1 RequestDrawdown with amount = 80000000.0
+
+  noteCid <- submit p.borrower do
+    exerciseCmd fac1 NotifyRepayment with
+      principal = 10000000.0
+      interest  = 250000.0
+
+  fac2 <- submit p.agent do
+    exerciseCmd noteCid Acknowledge with facilityCid = fac1
+
+  f2 <- fromSomeNote "facility after repayment" <$> queryContractId p.borrower fac2
+  f2.drawn === 20000000.0
+
+  -- lenders see none of the borrower-side flow
+  aDrawdowns <- query @Drawdown p.lenderA
+  aDrawdowns === []
+  bDrawdowns <- query @Drawdown p.lenderB
+  bDrawdowns === []
+
+  -- the borrower cannot approve its own drawdown
+  req2 <- submit p.borrower do
+    exerciseCmd fac2 RequestDrawdown with amount = 5000000.0
+  submitMustFail p.borrower do
+    exerciseCmd req2 Approve with facilityCid = fac2
