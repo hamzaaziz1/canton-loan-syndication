@@ -12,7 +12,7 @@ test: build
 clean:
 > rm -rf daml/*/.daml
 
-up:
+up: build
 > $(COMPOSE) up -d
 
 down:

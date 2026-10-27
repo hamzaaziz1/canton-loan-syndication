@@ -2,9 +2,21 @@ name: loansync
 
 x-canton-image: &canton-image europe-docker.pkg.dev/da-images/public/docker/canton-base:3.6.3
 
+x-canton-env: &canton-env
+  LOG_LEVEL_STDOUT: INFO
+  LOG_LEVEL_CANTON: INFO
+  JAVA_TOOL_OPTIONS: -Xms256m -Xmx1g
+
+x-participant: &participant
+  image: *canton-image
+  depends_on:
+    synchronizer:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:16
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
@@ -30,17 +42,65 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      <<: *canton-env
       POSTGRES_USER: synchronizer
       POSTGRES_PASSWORD: ${SYNC_DB_PASSWORD}
-      LOG_LEVEL_STDOUT: INFO
-      LOG_LEVEL_CANTON: INFO
-      JAVA_TOOL_OPTIONS: -Xms256m -Xmx1g
     volumes:
       - ../canton/config/synchronizer.conf:/app/app.conf:ro
       - ../canton/bootstrap/synchronizer.sc:/app/bootstrap.sc:ro
     ports:
       - "127.0.0.1:5008:5008"
       - "127.0.0.1:5009:5009"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  participant-agent:
+    <<: *participant
+    environment:
+      <<: *canton-env
+      POSTGRES_USER: p_agent
+      POSTGRES_PASSWORD: ${AGENT_DB_PASSWORD}
+      HOSTED_PARTIES: AgentBank,Borrower
+    volumes:
+      - ../canton/config/participant-agent.conf:/app/app.conf:ro
+      - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
+      - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
+    ports:
+      - "127.0.0.1:5011:5001"
+      - "127.0.0.1:5012:5002"
+
+  participant-lendera:
+    <<: *participant
+    environment:
+      <<: *canton-env
+      POSTGRES_USER: p_lendera
+      POSTGRES_PASSWORD: ${LENDERA_DB_PASSWORD}
+      HOSTED_PARTIES: LenderA
+    volumes:
+      - ../canton/config/participant-lendera.conf:/app/app.conf:ro
+      - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
+      - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
+    ports:
+      - "127.0.0.1:5021:5001"
+      - "127.0.0.1:5022:5002"
+
+  participant-lenderb:
+    <<: *participant
+    environment:
+      <<: *canton-env
+      POSTGRES_USER: p_lenderb
+      POSTGRES_PASSWORD: ${LENDERB_DB_PASSWORD}
+      HOSTED_PARTIES: LenderB
+    volumes:
+      - ../canton/config/participant-lenderb.conf:/app/app.conf:ro
+      - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
+      - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
+    ports:
+      - "127.0.0.1:5031:5001"
+      - "127.0.0.1:5032:5002"
 
 volumes:
   pgdata:
