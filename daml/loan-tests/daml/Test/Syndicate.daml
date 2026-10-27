@@ -2,11 +2,12 @@ module Test.Syndicate where
 
 import Daml.Script
 import DA.Assert ((===))
-import DA.List (sort)
+import DA.Optional (fromSomeNote)
 import Syndication.Facility
 import Syndication.Syndicate
 import Syndication.Allocation
 import Test.Setup
+import Test.Await
 
 data Invited = Invited with
     parties    : Parties
@@ -20,10 +21,10 @@ data ClosedBook = ClosedBook with
     facilityCid    : ContractId FacilityAgreement
     participations : [ContractId Participation]
 
-inviteLenders : Script Invited
-inviteLenders = do
-  p <- setupParties
-
+-- Runs the flow up to open invitations for the given parties.
+-- Works on the in-memory ledger and on a multi-node network.
+inviteLendersWith : Parties -> Script Invited
+inviteLendersWith p = do
   reqCid <- submit p.borrower do
     createCmd MandateRequest with
       borrower = p.borrower
@@ -39,6 +40,8 @@ inviteLenders = do
 
   invA <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderA
   invB <- submit p.agent do exerciseCmd bookCid Invite with lender = p.lenderB
+  awaitSome "invitation at lender A" (queryContractId p.lenderA invA)
+  awaitSome "invitation at lender B" (queryContractId p.lenderB invB)
 
   pure Invited with
     parties    = p
@@ -47,14 +50,18 @@ inviteLenders = do
     invA       = invA
     invB       = invB
 
-closeBook : Script ClosedBook
-closeBook = do
-  inv <- inviteLenders
-  let p = inv.parties
+inviteLenders : Script Invited
+inviteLenders = setupParties >>= inviteLendersWith
+
+closeBookWith : Parties -> Script ClosedBook
+closeBookWith p = do
+  inv <- inviteLendersWith p
 
   -- oversubscribed: 110m committed against a 100m target
   comA <- submit p.lenderA do exerciseCmd inv.invA Commit with amount = 60000000.0
   comB <- submit p.lenderB do exerciseCmd inv.invB Commit with amount = 50000000.0
+  awaitSome "commitment A at agent" (queryContractId p.agent comA)
+  awaitSome "commitment B at agent" (queryContractId p.agent comB)
 
   -- scale back to 100m in one atomic close
   (facilityCid, participations) <- submit p.agent do
@@ -62,10 +69,56 @@ closeBook = do
       mandateCid  = inv.mandateCid
       allocations = [(comA, 55000000.0), (comB, 45000000.0)]
 
+  case participations of
+    [partA, partB] -> do
+      awaitSome "participation at lender A" (queryContractId p.lenderA partA)
+      awaitSome "participation at lender B" (queryContractId p.lenderB partB)
+    _ -> abort "expected two participations"
+  awaitSome "facility at borrower" (queryContractId p.borrower facilityCid)
+
   pure ClosedBook with
     parties        = p
     facilityCid    = facilityCid
     participations = participations
+
+closeBook : Script ClosedBook
+closeBook = setupParties >>= closeBookWith
+
+-- Who sees what after the close. Checks contract ids rather than exact lists,
+-- so it also holds on a ledger that already has earlier runs on it.
+checkCloseBookVisibility : ClosedBook -> Script ()
+checkCloseBookVisibility cb = do
+  let p = cb.parties
+  (partA, partB) <- case cb.participations of
+    [a, b] -> pure (a, b)
+    _      -> abort "expected two participations"
+
+  -- each lender sees its own allocation and never the other's
+  aSeen <- map fst <$> query @Participation p.lenderA
+  assertMsg "lender A sees its own participation" (partA `elem` aSeen)
+  assertMsg "lender A must not see lender B's participation" (not (partB `elem` aSeen))
+  bSeen <- map fst <$> query @Participation p.lenderB
+  assertMsg "lender B sees its own participation" (partB `elem` bSeen)
+  assertMsg "lender B must not see lender A's participation" (not (partA `elem` bSeen))
+
+  pa <- fromSomeNote "lender A participation" <$> queryContractId p.lenderA partA
+  pa.amount === 55000000.0
+  pb <- fromSomeNote "lender B participation" <$> queryContractId p.lenderB partB
+  pb.amount === 45000000.0
+
+  -- the agent sees both
+  agentSeen <- map fst <$> query @Participation p.agent
+  assertMsg "agent sees both participations" (partA `elem` agentSeen && partB `elem` agentSeen)
+
+  -- the borrower sees the facility total and nothing about the split
+  fac <- fromSomeNote "borrower should see the facility" <$> queryContractId p.borrower cb.facilityCid
+  fac.facilityAmount === 100000000.0
+  borrowerParts <- query @Participation p.borrower
+  borrowerParts === []
+
+  -- lenders never see the borrower's side
+  lenderFacs <- query @FacilityAgreement p.lenderA
+  lenderFacs === []
 
 test_open_book_visibility : Script ()
 test_open_book_visibility = do
@@ -97,33 +150,7 @@ test_open_book_visibility = do
   borrowerComs === []
 
 test_close_book_visibility : Script ()
-test_close_book_visibility = do
-  cb <- closeBook
-  let p = cb.parties
-
-  -- each lender sees exactly its own allocation
-  aParts <- query @Participation p.lenderA
-  map (\(_, x) -> x.amount) aParts === [55000000.0]
-  bParts <- query @Participation p.lenderB
-  map (\(_, x) -> x.amount) bParts === [45000000.0]
-
-  -- the agent sees both
-  agentParts <- query @Participation p.agent
-  sort (map (\(_, x) -> x.amount) agentParts) === [45000000.0, 55000000.0]
-
-  -- the borrower sees the facility total and nothing about the split
-  borrowerFacs <- query @FacilityAgreement p.borrower
-  map (\(_, x) -> x.facilityAmount) borrowerFacs === [100000000.0]
-  borrowerParts <- query @Participation p.borrower
-  borrowerParts === []
-
-  -- lenders never see the borrower's side
-  lenderFacs <- query @FacilityAgreement p.lenderA
-  lenderFacs === []
-
-  -- Close consumed every commitment
-  agentComs <- query @Commitment p.agent
-  agentComs === []
+test_close_book_visibility = closeBook >>= checkCloseBookVisibility
 
 test_syndicate_authorisation : Script ()
 test_syndicate_authorisation = do

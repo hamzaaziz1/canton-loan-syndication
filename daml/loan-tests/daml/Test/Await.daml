@@ -1,0 +1,22 @@
+module Test.Await where
+
+import Daml.Script
+import DA.Time (milliseconds)
+
+-- A transaction commits on every involved node together, but each node
+-- publishes it to its ledger API on its own schedule. On a multi-node
+-- network, poll until the party's node shows the contract. On the
+-- in-memory test ledger the first poll already succeeds.
+awaitSome : Text -> Script (Optional a) -> Script ()
+awaitSome = awaitSomeN 50
+
+-- Daml-LF only allows recursion at the top level, so the loop lives here.
+awaitSomeN : Int -> Text -> Script (Optional a) -> Script ()
+awaitSomeN 0 what _ = abort ("timed out waiting for " <> what)
+awaitSomeN n what poll = do
+  result <- poll
+  case result of
+    Some _ -> pure ()
+    None -> do
+      sleep (milliseconds 200)
+      awaitSomeN (n - 1) what poll

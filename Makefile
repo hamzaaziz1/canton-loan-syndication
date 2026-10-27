@@ -27,3 +27,8 @@ ps:
 
 logs:
 > $(COMPOSE) logs -f --tail=100
+
+.PHONY: demo
+# runs the m1 flow across the three participant nodes (needs make up)
+demo: build
+> ./scripts/run-network-demo.sh

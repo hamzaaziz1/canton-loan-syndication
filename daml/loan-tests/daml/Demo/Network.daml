@@ -1,0 +1,22 @@
+module Demo.Network where
+
+import Daml.Script
+import Test.Setup
+import Test.Syndicate
+
+-- Lists the parties each named participant hosts, as (participant, party)
+-- pairs. scripts/run-network-demo.sh turns this into the routing table.
+discover : [Text] -> Script [(Text, Party)]
+discover nodes = do
+  perNode <- mapA hostedOn nodes
+  pure (concat perNode)
+
+hostedOn : Text -> Script [(Text, Party)]
+hostedOn node = do
+  details <- listKnownPartiesOn (ParticipantName node)
+  pure (map (\d -> (node, d.party)) (filter (\d -> d.isLocal) details))
+
+-- The m1 syndicate flow and its visibility assertions, unchanged,
+-- run across three participant nodes instead of one in-memory ledger.
+closeBookOnNetwork : Parties -> Script ()
+closeBookOnNetwork p = closeBookWith p >>= checkCloseBookVisibility
