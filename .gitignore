@@ -26,3 +26,6 @@ ui/dist/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+
+# demo and proof output
+out/

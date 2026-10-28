@@ -32,3 +32,8 @@ logs:
 # runs the m1 flow across the three participant nodes (needs make up)
 demo: build
 > ./scripts/run-network-demo.sh
+
+.PHONY: proof
+# searches every node's database for the last demo run's contract ids
+proof:
+> ./scripts/privacy-proof.sh

@@ -49,7 +49,10 @@ for party, node in cfg["party_participants"].items():
 PY
 
 # 3. the flow itself, each party submitting through its own node
+mkdir -p out
+cp "$OUT/routing.json" "$OUT/parties.json" out/
 dpm script --dar "$DAR" --script-name Demo.Network:closeBookOnNetwork \
-  --participant-config "$OUT/routing.json" --input-file "$OUT/parties.json"
+  --participant-config "$OUT/routing.json" --input-file "$OUT/parties.json" \
+  --output-file out/last-run.json
 
 echo "network demo passed"

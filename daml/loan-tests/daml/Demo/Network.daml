@@ -16,7 +16,11 @@ hostedOn node = do
   details <- listKnownPartiesOn (ParticipantName node)
   pure (map (\d -> (node, d.party)) (filter (\d -> d.isLocal) details))
 
--- The m1 syndicate flow and its visibility assertions, unchanged,
--- run across three participant nodes instead of one in-memory ledger.
-closeBookOnNetwork : Parties -> Script ()
-closeBookOnNetwork p = closeBookWith p >>= checkCloseBookVisibility
+-- The m1 syndicate flow and its visibility assertions, unchanged, run across
+-- three participant nodes. Returns the contract ids so the privacy proof can
+-- look for them in each node's storage.
+closeBookOnNetwork : Parties -> Script ClosedBook
+closeBookOnNetwork p = do
+  cb <- closeBookWith p
+  checkCloseBookVisibility cb
+  pure cb
