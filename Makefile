@@ -37,3 +37,8 @@ demo: build
 # searches every node's database for the last demo run's contract ids
 proof:
 > ./scripts/privacy-proof.sh
+
+.PHONY: console
+# runs canton/admin/$(SCRIPT).sc against the live nodes, e.g. make console SCRIPT=hello
+console:
+> $(COMPOSE) run --rm console run /app/admin/$(SCRIPT).sc -c /app/remote.conf --log-file-appender=off

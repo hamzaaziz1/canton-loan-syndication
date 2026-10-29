@@ -102,5 +102,16 @@ services:
       - "127.0.0.1:5031:5001"
       - "127.0.0.1:5032:5002"
 
+  # Not started by `make up`. Runs one admin script against the live nodes.
+  console:
+    image: *canton-image
+    profiles: ["tools"]
+    entrypoint: ["/app/bin/canton"]
+    environment:
+      JAVA_OPTS: -Xmx512m -Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener
+    volumes:
+      - ../canton/config/remote.conf:/app/remote.conf:ro
+      - ../canton/admin:/app/admin:ro
+
 volumes:
   pgdata:
