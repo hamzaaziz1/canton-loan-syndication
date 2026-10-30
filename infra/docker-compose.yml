@@ -24,6 +24,7 @@ services:
       AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD}
       LENDERA_DB_PASSWORD: ${LENDERA_DB_PASSWORD}
       LENDERB_DB_PASSWORD: ${LENDERB_DB_PASSWORD}
+      BORROWER_DB_PASSWORD: ${BORROWER_DB_PASSWORD}
       PROJECTOR_DB_PASSWORD: ${PROJECTOR_DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -101,6 +102,23 @@ services:
     ports:
       - "127.0.0.1:5031:5001"
       - "127.0.0.1:5032:5002"
+
+  # Onboarded under governance: needs a ParticipantSynchronizerPermission
+  # from the synchronizer owner before it can join loansync.
+  participant-borrower:
+    <<: *participant
+    environment:
+      <<: *canton-env
+      POSTGRES_USER: p_borrower
+      POSTGRES_PASSWORD: ${BORROWER_DB_PASSWORD}
+      HOSTED_PARTIES: ""
+    volumes:
+      - ../canton/config/participant-borrower.conf:/app/app.conf:ro
+      - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
+      - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
+    ports:
+      - "127.0.0.1:5041:5001"
+      - "127.0.0.1:5042:5002"
 
   # Not started by `make up`. Runs one admin script against the live nodes.
   console:

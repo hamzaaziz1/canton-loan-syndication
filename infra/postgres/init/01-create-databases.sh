@@ -20,4 +20,5 @@ create_owner synchronizer "$SYNC_DB_PASSWORD"    sequencer mediator
 create_owner p_agent      "$AGENT_DB_PASSWORD"   participant_agent
 create_owner p_lendera    "$LENDERA_DB_PASSWORD" participant_lendera
 create_owner p_lenderb    "$LENDERB_DB_PASSWORD" participant_lenderb
+create_owner p_borrower   "$BORROWER_DB_PASSWORD" participant_borrower
 create_owner projector    "$PROJECTOR_DB_PASSWORD" projector
