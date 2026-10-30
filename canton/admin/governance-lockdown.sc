@@ -8,7 +8,7 @@ val syncId = agent.synchronizers.id_of("loansync")
 val owner  = sequencer1
 
 // 1. allowlist first, so restricting cannot lock out existing members
-participants.remote.sortBy(_.name).foreach { p =>
+Seq(agent, lendera, lenderb).foreach { p =>
   if (owner.topology.participant_synchronizer_permissions.find(syncId, p.id).isEmpty) {
     owner.topology.participant_synchronizer_permissions.propose(syncId, p.id, ParticipantPermission.Submission)
     println(s"allowlisted ${p.name}")
