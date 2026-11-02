@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DAR=daml/loan-tests/.daml/dist/loan-tests-0.1.0.dar
+CA=canton/tls/ca/root-ca.crt   # ledger APIs use TLS with our dev CA
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
@@ -22,7 +23,7 @@ cat > "$OUT/nodes.json" <<'JSON'
 JSON
 echo '["agent", "lendera", "lenderb"]' > "$OUT/node-names.json"
 
-dpm script --dar "$DAR" --script-name Demo.Network:discover \
+dpm script --dar "$DAR" --tls --cacrt "$CA" --script-name Demo.Network:discover \
   --participant-config "$OUT/nodes.json" \
   --input-file "$OUT/node-names.json" --output-file "$OUT/hosted.json"
 
@@ -51,7 +52,7 @@ PY
 # 3. the flow itself, each party submitting through its own node
 mkdir -p out
 cp "$OUT/routing.json" "$OUT/parties.json" out/
-dpm script --dar "$DAR" --script-name Demo.Network:closeBookOnNetwork \
+dpm script --dar "$DAR" --tls --cacrt "$CA" --script-name Demo.Network:closeBookOnNetwork \
   --participant-config "$OUT/routing.json" --input-file "$OUT/parties.json" \
   --output-file out/last-run.json
 
