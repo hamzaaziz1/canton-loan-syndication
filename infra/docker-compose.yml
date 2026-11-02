@@ -111,7 +111,7 @@ services:
       <<: *canton-env
       POSTGRES_USER: p_borrower
       POSTGRES_PASSWORD: ${BORROWER_DB_PASSWORD}
-      HOSTED_PARTIES: ""
+      HOSTED_PARTIES: BorrowerCo
     volumes:
       - ../canton/config/participant-borrower.conf:/app/app.conf:ro
       - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
@@ -130,6 +130,7 @@ services:
     volumes:
       - ../canton/config/remote.conf:/app/remote.conf:ro
       - ../canton/admin:/app/admin:ro
+      - ../canton/certs:/app/certs:ro
 
 volumes:
   pgdata:

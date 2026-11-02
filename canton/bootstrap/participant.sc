@@ -11,7 +11,14 @@ def main(): Unit = {
   def isActive: Boolean =
     try node.synchronizers.active("loansync") catch { case _: Throwable => false }
 
-  utils.retry_until_true { node.health.initialized() }
+  // A node with manual identity waits here until its operator imports the
+  // certificates from the offline root key ceremony.
+  def isInitialized: Boolean =
+    try node.health.initialized() catch { case _: Throwable => false }
+  while (!isInitialized) {
+    println(s"${node.name}: waiting for identity initialisation")
+    Thread.sleep(15000)
+  }
 
   // On a restricted synchronizer, joining fails until the owners grant this
   // node a ParticipantSynchronizerPermission. Stay up and retry rather than
