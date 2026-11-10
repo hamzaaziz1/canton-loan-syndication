@@ -12,6 +12,7 @@ import com.daml.ledger.api.v2.UpdateServiceGrpc;
 import com.daml.ledger.api.v2.UpdateServiceOuterClass.GetUpdatesRequest;
 import com.daml.ledger.javaapi.data.CreatedEvent;
 import com.hamzaaziz.loansync.ledger.Parties;
+import com.hamzaaziz.loansync.ledger.TokenInterceptor;
 import io.grpc.ManagedChannel;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -33,14 +34,16 @@ public class Projector {
     private static final Logger log = LoggerFactory.getLogger(Projector.class);
 
     private final ManagedChannel channel;
+    private final TokenInterceptor token;
     private final Parties parties;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private volatile boolean running = true;
     private Thread worker;
 
-    public Projector(ManagedChannel channel, Parties parties, JdbcTemplate jdbc, TransactionTemplate tx) {
+    public Projector(ManagedChannel channel, TokenInterceptor token, Parties parties, JdbcTemplate jdbc, TransactionTemplate tx) {
         this.channel = channel;
+        this.token = token;
         this.parties = parties;
         this.jdbc = jdbc;
         this.tx = tx;
@@ -92,8 +95,8 @@ public class Projector {
                         .setTransactionShape(TransactionShape.TRANSACTION_SHAPE_ACS_DELTA)))
                 .build();
 
-        log.info("projecting updates for {} from offset {}", parties.hints(), offset);
-        var updates = UpdateServiceGrpc.newBlockingStub(channel).getUpdates(request);
+        log.info("projecting updates for {} from offset {}", parties.names(), offset);
+        var updates = UpdateServiceGrpc.newBlockingStub(channel).withInterceptors(token).getUpdates(request);
         while (running && updates.hasNext()) {
             var update = updates.next();
             if (update.hasTransaction()) {

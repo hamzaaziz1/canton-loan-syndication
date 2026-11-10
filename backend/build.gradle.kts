@@ -73,9 +73,3 @@ tasks.register<JavaExec>("ledgerSmoke") {
     workingDir = projectDir
 }
 
-tasks.register<JavaExec>("activeContracts") {
-    description = "Lists one party's facilities and participations through its own node"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass = "com.hamzaaziz.loansync.ledger.ActiveContracts"
-    workingDir = projectDir
-}

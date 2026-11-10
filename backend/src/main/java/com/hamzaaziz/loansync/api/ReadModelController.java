@@ -37,7 +37,7 @@ public class ReadModelController {
     @GetMapping("/status")
     public Status status() {
         var offsets = jdbc.queryForList("SELECT ledger_offset FROM checkpoint WHERE id = 1", Long.class);
-        return new Status(organisation, parties.hints(), offsets.isEmpty() ? null : offsets.getFirst());
+        return new Status(organisation, parties.names(), offsets.isEmpty() ? null : offsets.getFirst());
     }
 
     @GetMapping("/facilities")
