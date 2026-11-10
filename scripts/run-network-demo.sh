@@ -23,6 +23,12 @@ cat > "$OUT/nodes.json" <<'JSON'
 JSON
 echo '["agent", "lendera", "lenderb"]' > "$OUT/node-names.json"
 
+# ledger APIs require a token: one short-lived token (canton caps lifetime at 5
+# minutes) for the demo user, which exists on each of these nodes
+TOKEN=$(./scripts/mint-token.sh demo 300)
+jq --arg t "$TOKEN" '.default_participant.access_token = $t | .participants |= map_values(.access_token = $t)' \
+  "$OUT/nodes.json" > "$OUT/nodes.tmp" && mv "$OUT/nodes.tmp" "$OUT/nodes.json"
+
 dpm script --dar "$DAR" --tls --cacrt "$CA" --script-name Demo.Network:discover \
   --participant-config "$OUT/nodes.json" \
   --input-file "$OUT/node-names.json" --output-file "$OUT/hosted.json"

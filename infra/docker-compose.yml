@@ -71,6 +71,7 @@ services:
       - ../canton/config/participant-agent.conf:/app/app.conf:ro
       - ../canton/config/tls-shared.conf:/app/tls-shared.conf:ro
       - ../canton/tls/participant-agent:/app/tls:ro
+      - ../canton/jwt/issuer.crt:/app/jwt/issuer.crt:ro
       - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
       - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
     ports:
@@ -88,6 +89,7 @@ services:
       - ../canton/config/participant-lendera.conf:/app/app.conf:ro
       - ../canton/config/tls-shared.conf:/app/tls-shared.conf:ro
       - ../canton/tls/participant-lendera:/app/tls:ro
+      - ../canton/jwt/issuer.crt:/app/jwt/issuer.crt:ro
       - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
       - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
     ports:
@@ -105,6 +107,7 @@ services:
       - ../canton/config/participant-lenderb.conf:/app/app.conf:ro
       - ../canton/config/tls-shared.conf:/app/tls-shared.conf:ro
       - ../canton/tls/participant-lenderb:/app/tls:ro
+      - ../canton/jwt/issuer.crt:/app/jwt/issuer.crt:ro
       - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
       - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
     ports:
@@ -124,6 +127,7 @@ services:
       - ../canton/config/participant-borrower.conf:/app/app.conf:ro
       - ../canton/config/tls-shared.conf:/app/tls-shared.conf:ro
       - ../canton/tls/participant-borrower:/app/tls:ro
+      - ../canton/jwt/issuer.crt:/app/jwt/issuer.crt:ro
       - ../canton/bootstrap/participant.sc:/app/bootstrap.sc:ro
       - ../daml/loan-model/.daml/dist/loan-model-0.1.0.dar:/app/dars/loan-model.dar:ro
     ports:
