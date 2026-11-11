@@ -21,6 +21,8 @@ hostedOn node = do
 -- look for them in each node's storage.
 closeBookOnNetwork : Parties -> Script ClosedBook
 closeBookOnNetwork p = do
-  cb <- closeBookWith p
+  -- each run gets its own facility id, so runs never share participations
+  now <- getTime
+  cb <- closeBookWithTerms (sampleTerms with facilityId = "FAC-" <> show now) p
   checkCloseBookVisibility cb
   pure cb

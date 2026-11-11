@@ -8,6 +8,7 @@ import Syndication.Syndicate
 import Syndication.Allocation
 import Test.Setup
 import Test.Await
+import Syndication.Types (FacilityTerms)
 
 data Invited = Invited with
     parties    : Parties
@@ -24,17 +25,23 @@ data ClosedBook = ClosedBook with
 -- Runs the flow up to open invitations for the given parties.
 -- Works on the in-memory ledger and on a multi-node network.
 inviteLendersWith : Parties -> Script Invited
-inviteLendersWith p = do
+inviteLendersWith = inviteLendersWithTerms sampleTerms
+
+-- The same flow for given terms. The network demo passes a fresh facility id
+-- per run: Daml 3 has no contract keys, so keeping business ids unique is the
+-- agent's job, not the ledger's.
+inviteLendersWithTerms : FacilityTerms -> Parties -> Script Invited
+inviteLendersWithTerms terms p = do
   reqCid <- submit p.borrower do
     createCmd MandateRequest with
       borrower = p.borrower
       agent    = p.agent
-      terms    = sampleTerms
+      terms    = terms
 
   -- two roots in one transaction: the borrower is an informee of Accept only
   let book = SyndicateBook with
         agent = p.agent
-        terms = sampleTerms
+        terms = terms
   (mandateCid, bookCid) <- submit p.agent $
     (,) <$> exerciseCmd reqCid Accept <*> createCmd book
 
@@ -54,8 +61,11 @@ inviteLenders : Script Invited
 inviteLenders = setupParties >>= inviteLendersWith
 
 closeBookWith : Parties -> Script ClosedBook
-closeBookWith p = do
-  inv <- inviteLendersWith p
+closeBookWith = closeBookWithTerms sampleTerms
+
+closeBookWithTerms : FacilityTerms -> Parties -> Script ClosedBook
+closeBookWithTerms terms p = do
+  inv <- inviteLendersWithTerms terms p
 
   -- oversubscribed: 110m committed against a 100m target
   comA <- submit p.lenderA do exerciseCmd inv.invA Commit with amount = 60000000.0
