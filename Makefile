@@ -52,3 +52,7 @@ backends-status:
 > ./scripts/backends.sh status
 smoke: demo       # a fresh facility, then the backends' write side end to end
 > ./scripts/backend-smoke.sh
+
+.PHONY: backend-build
+backend-build:    # codegen, compile, unit tests and jar; needs no running network
+> cd backend && ./gradlew build --console=plain -q
