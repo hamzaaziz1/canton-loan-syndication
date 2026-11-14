@@ -42,3 +42,13 @@ proof:
 # runs canton/admin/$(SCRIPT).sc against the live nodes, e.g. make console SCRIPT=hello
 console:
 > $(COMPOSE) run --rm console run /app/admin/$(SCRIPT).sc -c /app/remote.conf --log-file-appender=off
+
+.PHONY: backends backends-down backends-status smoke
+backends:         # token sink plus one backend instance per organisation, in the background
+> ./scripts/backends.sh up
+backends-down:
+> ./scripts/backends.sh down
+backends-status:
+> ./scripts/backends.sh status
+smoke: demo       # a fresh facility, then the backends' write side end to end
+> ./scripts/backend-smoke.sh
