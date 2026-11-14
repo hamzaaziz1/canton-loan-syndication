@@ -1,0 +1,40 @@
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d232b; --muted: #687384; --line: #e3e7ec;
+  --accent: #2f5bd3; --ok: #1f7a4d; --err: #b3261e; --chip: #eef1f6;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.45; color: var(--text); background: var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111419; --panel: #191d24; --text: #e4e8ee; --muted: #8f99a8; --line: #2a303a;
+    --accent: #5b7fe6; --ok: #5ccf95; --err: #ff8a80; --chip: #232934;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+.top h1 { font-size: 20px; margin: 0 0 4px; }
+.top p { margin: 0 0 20px; color: var(--muted); max-width: 70ch; }
+.panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.pane-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pane-head h2 { margin: 0; font-size: 17px; }
+.sub, .offset { color: var(--muted); font-size: 12px; }
+.offset { font-variant-numeric: tabular-nums; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 6px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 12px; border-top: none; }
+.num { text-align: right; }
+.empty, .muted, .unit { color: var(--muted); }
+.empty { font-style: italic; margin: 4px 0; }
+.privacy { border-left: 3px solid var(--accent); background: var(--chip); padding: 6px 10px; border-radius: 0 6px 6px 0; margin: 4px 0; font-size: 13px; }
+.inline { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+input[type="number"] { width: 80px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+button:disabled { opacity: 0.5; cursor: default; }
+.notice { margin-top: 12px; font-size: 13px; padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; }
+.notice.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.notice.error { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }

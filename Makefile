@@ -56,3 +56,7 @@ smoke: demo       # a fresh facility, then the backends' write side end to end
 .PHONY: backend-build
 backend-build:    # codegen, compile, unit tests and jar; needs no running network
 > cd backend && ./gradlew build --console=plain -q
+
+.PHONY: ui
+ui:               # the three-pane UI on http://localhost:5173 (run make backends first); Ctrl-C stops it
+> cd ui && npm run dev
