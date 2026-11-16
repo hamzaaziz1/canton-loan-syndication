@@ -11,12 +11,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Read-only views over this organisation's read model. Serves only what this organisation's node received. */
+/**
+ * Read-only views over this organisation's read model, limited to contracts
+ * the signed-in person's party is a stakeholder of. That is the rule the ledger
+ * itself applies, so a person never sees more than their party could, even on
+ * a node that hosts several parties.
+ */
 @RestController
 @RequestMapping("/api")
 public class ReadModelController {
 
-    public record Status(String organisation, List<String> parties, Long ledgerOffset) {}
+    public record Status(String organisation, List<String> parties, Long ledgerOffset, String user, String actingAs) {}
 
     public record Facility(String contractId, String facilityId, String borrower, String currency,
                            BigDecimal facilityAmount, BigDecimal drawn, LocalDate maturity, long createdOffset) {}
@@ -26,18 +31,22 @@ public class ReadModelController {
 
     private final JdbcTemplate jdbc;
     private final Parties parties;
+    private final CurrentUser user;
     private final String organisation;
 
-    public ReadModelController(JdbcTemplate jdbc, Parties parties, @Value("${loansync.org}") String organisation) {
+    public ReadModelController(JdbcTemplate jdbc, Parties parties, CurrentUser user,
+                               @Value("${loansync.org}") String organisation) {
         this.jdbc = jdbc;
         this.parties = parties;
+        this.user = user;
         this.organisation = organisation;
     }
 
     @GetMapping("/status")
     public Status status() {
         var offsets = jdbc.queryForList("SELECT ledger_offset FROM checkpoint WHERE id = 1", Long.class);
-        return new Status(organisation, parties.names(), offsets.isEmpty() ? null : offsets.getFirst());
+        return new Status(organisation, parties.names(), offsets.isEmpty() ? null : offsets.getFirst(),
+                user.name(), user.partyName());
     }
 
     @GetMapping("/facilities")
@@ -53,11 +62,13 @@ public class ReadModelController {
                        created_offset
                 FROM contract
                 WHERE template = 'Syndication.Facility:FacilityAgreement' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)
                 ORDER BY created_offset DESC""",
                 (rs, row) -> new Facility(rs.getString("contract_id"), rs.getString("facility_id"),
                         rs.getString("borrower"), rs.getString("currency"), rs.getBigDecimal("facility_amount"),
                         rs.getBigDecimal("drawn"), rs.getObject("maturity", LocalDate.class),
-                        rs.getLong("created_offset")));
+                        rs.getLong("created_offset")),
+                user.partyId());
     }
 
     @GetMapping("/participations")
@@ -72,9 +83,11 @@ public class ReadModelController {
                        created_offset
                 FROM contract
                 WHERE template = 'Syndication.Allocation:Participation' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)
                 ORDER BY created_offset DESC""",
                 (rs, row) -> new Participation(rs.getString("contract_id"), rs.getString("facility_id"),
                         rs.getString("lender"), rs.getString("currency"), rs.getBigDecimal("amount"),
-                        rs.getBigDecimal("share_percent"), rs.getLong("created_offset")));
+                        rs.getBigDecimal("share_percent"), rs.getLong("created_offset")),
+                user.partyId());
     }
 }

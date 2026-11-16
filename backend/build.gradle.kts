@@ -26,6 +26,8 @@ dependencies {
 	implementation(platform("io.grpc:grpc-bom:1.84.1"))
 	implementation("io.grpc:grpc-api")
 	runtimeOnly("io.grpc:grpc-netty-shaded")
+	// people log in to their own organisation's instance (ADR 0005)
+	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
 	implementation("org.springframework.boot:spring-boot-starter-jdbc")

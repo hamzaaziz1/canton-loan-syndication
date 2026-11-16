@@ -7,7 +7,6 @@ import com.hamzaaziz.loansync.daml.syndication.facility.DrawdownRequest;
 import com.hamzaaziz.loansync.daml.syndication.facility.FacilityAgreement;
 import com.hamzaaziz.loansync.ledger.CommandSubmitter;
 import com.hamzaaziz.loansync.ledger.CommandSubmitter.Submitted;
-import com.hamzaaziz.loansync.ledger.Parties;
 import io.grpc.StatusRuntimeException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -31,8 +30,8 @@ import java.util.List;
 
 /**
  * The write side. Each endpoint turns one business action into one atomic
- * ledger transaction, submitted as a party this instance's user may act as.
- * Contract ids come from the read model; the ledger re-checks everything.
+ * ledger transaction, submitted as the signed-in person's own party. Lookups
+ * are limited to what that party can see; the ledger re-checks everything.
  */
 @RestController
 @RequestMapping("/api")
@@ -50,12 +49,12 @@ public class CommandController {
     private record PendingRequest(String facilityId, BigDecimal amount, String agent) {}
 
     private final JdbcTemplate jdbc;
-    private final Parties parties;
+    private final CurrentUser user;
     private final CommandSubmitter ledger;
 
-    public CommandController(JdbcTemplate jdbc, Parties parties, CommandSubmitter ledger) {
+    public CommandController(JdbcTemplate jdbc, CurrentUser user, CommandSubmitter ledger) {
         this.jdbc = jdbc;
-        this.parties = parties;
+        this.user = user;
         this.ledger = ledger;
     }
 
@@ -66,9 +65,11 @@ public class CommandController {
                        (payload->>'amount')::numeric AS amount, created_offset
                 FROM contract
                 WHERE template = 'Syndication.Facility:DrawdownRequest' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)
                 ORDER BY created_offset DESC""",
                 (rs, row) -> new DrawdownRequestView(rs.getString("contract_id"), rs.getString("facility_id"),
-                        rs.getBigDecimal("amount"), rs.getLong("created_offset")));
+                        rs.getBigDecimal("amount"), rs.getLong("created_offset")),
+                user.partyId());
     }
 
     @GetMapping("/funding-calls")
@@ -79,10 +80,12 @@ public class CommandController {
                        (payload->>'amount')::numeric AS amount, created_offset
                 FROM contract
                 WHERE template = 'Syndication.Allocation:FundingCall' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)
                 ORDER BY created_offset DESC""",
                 (rs, row) -> new FundingCallView(rs.getString("contract_id"), rs.getString("facility_id"),
                         rs.getString("drawdown_ref"), rs.getString("lender"), rs.getString("currency"),
-                        rs.getBigDecimal("amount"), rs.getLong("created_offset")));
+                        rs.getBigDecimal("amount"), rs.getLong("created_offset")),
+                user.partyId());
     }
 
     /** The borrower asks to draw on its facility. */
@@ -90,8 +93,9 @@ public class CommandController {
     public Submitted requestDrawdown(@PathVariable String facilityId, @Valid @RequestBody DrawdownAmount body,
                                      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         var facility = openFacility(facilityId);
+        var party = actAs(facility.borrower());
         var update = new FacilityAgreement.ContractId(facility.contractId()).exerciseRequestDrawdown(body.amount());
-        return ledger.submit(actAs(facility.borrower()), idempotencyKey, List.of(update));
+        return ledger.submit(party, idempotencyKey, List.of(update));
     }
 
     /**
@@ -106,18 +110,21 @@ public class CommandController {
                 SELECT payload->>'facilityId' AS facility_id, (payload->>'amount')::numeric AS amount,
                        payload->>'agent' AS agent
                 FROM contract
-                WHERE contract_id = ? AND template = 'Syndication.Facility:DrawdownRequest' AND archived_offset IS NULL""",
+                WHERE contract_id = ? AND template = 'Syndication.Facility:DrawdownRequest' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)""",
                 (rs, row) -> new PendingRequest(rs.getString("facility_id"), rs.getBigDecimal("amount"),
-                        rs.getString("agent")), contractId);
+                        rs.getString("agent")), contractId, user.partyId());
         if (requests.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no pending drawdown request " + contractId);
         }
         var request = requests.getFirst();
+        var party = actAs(request.agent());
         var facility = openFacility(request.facilityId());
         var participations = jdbc.queryForList("""
                 SELECT contract_id FROM contract
                 WHERE template = 'Syndication.Allocation:Participation' AND archived_offset IS NULL
-                  AND payload->>'facilityId' = ?""", String.class, request.facilityId());
+                  AND payload->>'facilityId' = ? AND ? = ANY(signatories || observers)""",
+                String.class, request.facilityId(), party);
         if (participations.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "facility " + request.facilityId() + " has no participations");
         }
@@ -128,7 +135,7 @@ public class CommandController {
                 .exerciseApprove(new FacilityAgreement.ContractId(facility.contractId())));
         participations.forEach(p -> updates.add(
                 new Participation.ContractId(p).exerciseCallFunds(drawdownRef, request.amount())));
-        return ledger.submit(actAs(request.agent()), idempotencyKey, updates);
+        return ledger.submit(party, idempotencyKey, updates);
     }
 
     /** A lender confirms it has funded its share. */
@@ -137,13 +144,14 @@ public class CommandController {
                                    @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         var lenders = jdbc.queryForList("""
                 SELECT payload->>'lender' FROM contract
-                WHERE contract_id = ? AND template = 'Syndication.Allocation:FundingCall' AND archived_offset IS NULL""",
-                String.class, contractId);
+                WHERE contract_id = ? AND template = 'Syndication.Allocation:FundingCall' AND archived_offset IS NULL
+                  AND ? = ANY(signatories || observers)""",
+                String.class, contractId, user.partyId());
         if (lenders.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no open funding call " + contractId);
         }
-        var update = new FundingCall.ContractId(contractId).exerciseConfirmFunded();
-        return ledger.submit(actAs(lenders.getFirst()), idempotencyKey, List.of(update));
+        var party = actAs(lenders.getFirst());
+        return ledger.submit(party, idempotencyKey, List.of(new FundingCall.ContractId(contractId).exerciseConfirmFunded()));
     }
 
     /** The ledger rejected a command: report its reason rather than a stack trace. */
@@ -160,8 +168,9 @@ public class CommandController {
         var found = jdbc.query("""
                 SELECT contract_id, payload->>'borrower' AS borrower FROM contract
                 WHERE template = 'Syndication.Facility:FacilityAgreement' AND archived_offset IS NULL
-                  AND payload->'terms'->>'facilityId' = ?""",
-                (rs, row) -> new Facility(rs.getString("contract_id"), rs.getString("borrower")), facilityId);
+                  AND payload->'terms'->>'facilityId' = ? AND ? = ANY(signatories || observers)""",
+                (rs, row) -> new Facility(rs.getString("contract_id"), rs.getString("borrower")),
+                facilityId, user.partyId());
         if (found.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no open facility " + facilityId);
         }
@@ -172,9 +181,11 @@ public class CommandController {
         return found.getFirst();
     }
 
+    /** The person may act only as their own party. */
     private String actAs(String party) {
-        if (!parties.ids().contains(party)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "this instance cannot act as " + party.split("::")[0]);
+        if (!party.equals(user.partyId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    user.name() + " acts as " + user.partyName() + ", not " + party.split("::")[0]);
         }
         return party;
     }

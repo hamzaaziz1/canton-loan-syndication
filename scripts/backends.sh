@@ -30,6 +30,8 @@ case "${1:-}" in
     sleep 2
     PROJECTOR_DB_PASSWORD=$(grep '^PROJECTOR_DB_PASSWORD=' infra/.env | cut -d= -f2-)
     export PROJECTOR_DB_PASSWORD
+    UI_DEV_PASSWORD=$(grep '^UI_DEV_PASSWORD=' infra/.env | cut -d= -f2-)
+    export UI_DEV_PASSWORD
     for o in $ORGS; do
       start "backend-$o" bash -c "cd backend && exec java -jar $JAR --spring.profiles.active=$o"
     done
@@ -54,7 +56,7 @@ case "${1:-}" in
   status)
     for o in agent lendera lenderb; do
       printf '%-8s ' "$o"
-      curl -sf "localhost:${PORT[$o]}/api/status" || printf 'not running'
+      curl -sf -u "$o.ops:$(grep '^UI_DEV_PASSWORD=' infra/.env | cut -d= -f2-)" "localhost:${PORT[$o]}/api/status" || printf 'not running'
       echo
     done ;;
   *)
