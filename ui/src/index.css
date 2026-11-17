@@ -38,3 +38,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 .notice { margin-top: 12px; font-size: 13px; padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; }
 .notice.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .notice.error { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+
+.login { display: grid; gap: 10px; margin-top: 14px; max-width: 280px; }
+.login label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.login select, .login input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 14px; }
+.login button { justify-self: start; }
+.signed-in { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); }

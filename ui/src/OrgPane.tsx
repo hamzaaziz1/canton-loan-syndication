@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { actions, loadSnapshot, type Org, type Submitted } from './api'
+import { useEffect, useState } from 'react'
+import { actions, ApiError, loadSnapshot, whoAmI, type Credentials, type Org, type Submitted } from './api'
 import { usePoll } from './usePoll'
 
-interface Props { org: Org; title: string; subtitle: string }
+interface Props { org: Org; title: string; subtitle: string; users: string[] }
 
 // Older demo runs all used FAC-001; only facilities with a unique id can be acted on.
 const isUnique = (facilityId: string) => facilityId.startsWith('FAC-2')
@@ -15,11 +15,82 @@ function shortId(facilityId: string) {
   return m ? `FAC ${m[2]}/${m[1]} ${m[3]}` : facilityId
 }
 
-export function OrgPane({ org, title, subtitle }: Props) {
-  const { data, error, refresh } = usePoll(() => loadSnapshot(org))
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+function Head({ title, subtitle, offset }: { title: string; subtitle: string; offset?: number | null }) {
+  return (
+    <div className="pane-head">
+      <div>
+        <h2>{title}</h2>
+        <div className="sub">{subtitle}</div>
+      </div>
+      <div className="offset">{offset != null ? `node offset ${offset}` : ''}</div>
+    </div>
+  )
+}
+
+export function OrgPane({ org, title, subtitle, users }: Props) {
+  // Held in memory only: reloading the page signs everyone out.
+  const [creds, setCreds] = useState<Credentials>()
+  if (!creds) {
+    return (
+      <section className="pane">
+        <Head title={title} subtitle={subtitle} />
+        <SignIn org={org} users={users} onSignedIn={setCreds} />
+      </section>
+    )
+  }
+  return <SignedIn org={org} title={title} subtitle={subtitle} creds={creds} onSignOut={() => setCreds(undefined)} />
+}
+
+function SignIn({ org, users, onSignedIn }: { org: Org; users: string[]; onSignedIn: (c: Credentials) => void }) {
+  const [username, setUsername] = useState(users[0])
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    setBusy(true)
+    setError(undefined)
+    const creds = { username, password }
+    try {
+      await whoAmI(org, creds)
+      onSignedIn(creds)
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 401 ? 'Wrong user or password' : message(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="login" onSubmit={e => { e.preventDefault(); void submit() }}>
+      <label>
+        <span>User</span>
+        <select value={username} onChange={e => setUsername(e.target.value)}>
+          {users.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" autoComplete="current-password" value={password}
+               onChange={e => setPassword(e.target.value)} />
+      </label>
+      <button disabled={busy || password === ''}>Sign in</button>
+      {error && <p className="notice error">{error}</p>}
+    </form>
+  )
+}
+
+function SignedIn({ org, title, subtitle, creds, onSignOut }:
+                  { org: Org; title: string; subtitle: string; creds: Credentials; onSignOut: () => void }) {
+  const { data, error, refresh } = usePoll(() => loadSnapshot(org, creds))
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string }>()
   const [busy, setBusy] = useState(false)
-  const isAgent = org === 'agent'
+
+  useEffect(() => {
+    if (error instanceof ApiError && error.status === 401) onSignOut()
+  }, [error, onSignOut])
 
   async function run(label: string, action: () => Promise<Submitted>) {
     setBusy(true)
@@ -28,25 +99,22 @@ export function OrgPane({ org, title, subtitle }: Props) {
       setNotice({ kind: 'ok', text: `${label}: committed at offset ${result.offset}` })
       await refresh()
     } catch (e) {
-      setNotice({ kind: 'error', text: `${label}: ${e instanceof Error ? e.message : String(e)}` })
+      setNotice({ kind: 'error', text: `${label}: ${message(e)}` })
     } finally {
       setBusy(false)
     }
   }
 
-  const head = (
-    <div className="pane-head">
-      <div>
-        <h2>{title}</h2>
-        <div className="sub">{subtitle}</div>
-      </div>
-      <div className="offset">{data?.status.ledgerOffset != null ? `node offset ${data.status.ledgerOffset}` : ''}</div>
-    </div>
-  )
   if (!data) {
-    return <section className="pane">{head}<p className={error ? 'notice error' : 'muted'}>{error ?? 'connecting…'}</p></section>
+    return (
+      <section className="pane">
+        <Head title={title} subtitle={subtitle} />
+        <p className={error ? 'notice error' : 'muted'}>{error ? message(error) : 'Loading…'}</p>
+      </section>
+    )
   }
 
+  const actingAs = data.status.actingAs
   const facilities = data.facilities.filter(f => isUnique(f.facilityId)).slice(0, 3)
   const participations = data.participations.filter(p => isUnique(p.facilityId)).slice(0, 4)
   const calls = data.fundingCalls.filter(c => isUnique(c.facilityId))
@@ -54,12 +122,15 @@ export function OrgPane({ org, title, subtitle }: Props) {
 
   return (
     <section className="pane">
-      {head}
-      <div className="chips">{data.status.parties.map(p => <span key={p} className="chip">{p}</span>)}</div>
+      <Head title={title} subtitle={subtitle} offset={data.status.ledgerOffset} />
+      <div className="signed-in">
+        <span>Signed in as <strong>{data.status.user}</strong>, acting as <span className="chip">{actingAs}</span></span>
+        <button className="secondary" onClick={onSignOut}>Sign out</button>
+      </div>
 
       <h3>Facilities</h3>
       {data.facilities.length === 0 ? (
-        <p className="privacy">No facility contracts on this node. The facility is between the borrower and the agent, so it never reaches a lender's participant.</p>
+        <p className="privacy">No facility contracts visible to {actingAs}. The facility is between the borrower and the agent, so it never reaches a lender's participant.</p>
       ) : (
         <table>
           <thead><tr><th>Facility</th><th className="num">Amount</th><th className="num">Drawn</th><th className="num">Available</th></tr></thead>
@@ -68,8 +139,8 @@ export function OrgPane({ org, title, subtitle }: Props) {
               <tr key={f.contractId}>
                 <td title={f.facilityId}>
                   {shortId(f.facilityId)}
-                  {isAgent && <DrawdownForm disabled={busy} onSubmit={amount =>
-                    run('Drawdown request (as Borrower)', () => actions.requestDrawdown(f.facilityId, amount))} />}
+                  {actingAs === 'Borrower' && <DrawdownForm disabled={busy} onSubmit={amount =>
+                    run('Drawdown request', () => actions.requestDrawdown(creds, f.facilityId, amount))} />}
                 </td>
                 <td className="num">{money(f.facilityAmount, f.currency)}</td>
                 <td className="num">{money(f.drawn, f.currency)}</td>
@@ -80,7 +151,7 @@ export function OrgPane({ org, title, subtitle }: Props) {
         </table>
       )}
 
-      {isAgent && (
+      {org === 'agent' && (
         <>
           <h3>Drawdown requests</h3>
           {requests.length === 0 ? <p className="empty">None pending</p> : (
@@ -89,8 +160,10 @@ export function OrgPane({ org, title, subtitle }: Props) {
                 <tr key={r.contractId}>
                   <td title={r.facilityId}>{shortId(r.facilityId)}</td>
                   <td className="num">{money(r.amount)}</td>
-                  <td className="num"><button disabled={busy} onClick={() =>
-                    run('Approval with funding calls', () => actions.approveDrawdown(r.contractId))}>Approve</button></td>
+                  <td className="num">{actingAs === 'AgentBank'
+                    ? <button disabled={busy} onClick={() =>
+                        run('Approval with funding calls', () => actions.approveDrawdown(creds, r.contractId))}>Approve</button>
+                    : <span className="muted">awaiting agent</span>}</td>
                 </tr>
               ))}
             </tbody></table>
@@ -106,15 +179,17 @@ export function OrgPane({ org, title, subtitle }: Props) {
               <td title={c.drawdownRef}>{shortId(c.facilityId)}</td>
               <td>{c.lender}</td>
               <td className="num">{money(c.amount, c.currency)}</td>
-              {!isAgent && <td className="num"><button disabled={busy} onClick={() =>
-                run('Funding confirmed', () => actions.confirmFunded(org, c.contractId))}>Confirm</button></td>}
+              {c.lender === actingAs && <td className="num"><button disabled={busy} onClick={() =>
+                run('Funding confirmed', () => actions.confirmFunded(org, creds, c.contractId))}>Confirm</button></td>}
             </tr>
           ))}
         </tbody></table>
       )}
 
       <h3>Participations</h3>
-      {participations.length === 0 ? <p className="empty">None</p> : (
+      {data.participations.length === 0 ? (
+        <p className="privacy">No participations visible to {actingAs}. Each participation is between the agent and one lender, so the borrower is not a stakeholder.</p>
+      ) : (
         <table><tbody>
           {participations.map(p => (
             <tr key={p.contractId}>

@@ -8,9 +8,9 @@ export default function App() {
         <p>Three organisations, each with its own participant node and its own backend. Each pane shows only what its own node received.</p>
       </header>
       <div className="panes">
-        <OrgPane org="agent" title="AgentBank" subtitle="Agent node, also hosting the borrower" />
-        <OrgPane org="lendera" title="LenderA" subtitle="Lender A's node" />
-        <OrgPane org="lenderb" title="LenderB" subtitle="Lender B's node" />
+        <OrgPane org="agent" title="AgentBank" subtitle="Agent node, also hosting the borrower" users={['agent.ops', 'borrower.treasury']} />
+        <OrgPane org="lendera" title="LenderA" subtitle="Lender A's node" users={['lendera.ops']} />
+        <OrgPane org="lenderb" title="LenderB" subtitle="Lender B's node" users={['lenderb.ops']} />
       </div>
     </main>
   )
