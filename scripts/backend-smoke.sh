@@ -64,8 +64,10 @@ await "lendera's call is confirmed and archived" "$LENDERA" "$LA/funding-calls" 
 [ "$(code -u "agent.ops:wrong" "$AG/facilities")" = 401 ] && pass "a wrong password is refused (401)" || fail "a wrong password was accepted"
 [ "$(code -u "$AGENT" -X POST "$AG/facilities/$FE/drawdown-requests" -H "$J" -d '{"amount":1}')" = 403 ] \
   && pass "the agent cannot request drawdowns on the borrower's behalf (403)" || fail "the agent could request a drawdown"
-[ "$(code -u "$BORROWER" -X POST "$AG/facilities/$FE/drawdown-requests" -H "$J" -d '{"amount":90000000}')" = 409 ] \
-  && pass "overdrawing is refused by the ledger (409)" || fail "an overdraw was not refused"
+OVER=$(curl -s -u "$BORROWER" -w '\n%{http_code}' -X POST "$AG/facilities/$FE/drawdown-requests" -H "$J" -d '{"amount":90000000}')
+[ "$(tail -1 <<< "$OVER")" = 409 ] && [ "$(head -1 <<< "$OVER" | jq -r .detail)" = "exceeds available amount" ] \
+  && pass "overdrawing is refused by the Daml model, with its own reason (409: exceeds available amount)" \
+  || fail "an overdraw was not refused with the model's reason"
 [ "$(code -u "$LENDERA" -X POST "$LA/funding-calls/$CALL/confirm")" = 404 ] \
   && pass "confirming twice is refused (404)" || fail "a second confirmation was not refused"
 [ "$(code -u "$LENDERA" -X POST "$LA/facilities/$FE/drawdown-requests" -H "$J" -d '{"amount":1}')" = 404 ] \

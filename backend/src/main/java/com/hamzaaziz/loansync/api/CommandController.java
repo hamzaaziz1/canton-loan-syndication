@@ -157,11 +157,7 @@ public class CommandController {
     /** The ledger rejected a command: report its reason rather than a stack trace. */
     @ExceptionHandler(StatusRuntimeException.class)
     public ProblemDetail ledgerRejected(StatusRuntimeException e) {
-        var status = switch (e.getStatus().getCode()) {
-            case INVALID_ARGUMENT, FAILED_PRECONDITION, NOT_FOUND, ALREADY_EXISTS, ABORTED -> HttpStatus.CONFLICT;
-            default -> HttpStatus.BAD_GATEWAY;
-        };
-        return ProblemDetail.forStatusAndDetail(status, "ledger rejected the command: " + e.getStatus().getDescription());
+        return LedgerRejections.toProblem(e);
     }
 
     private Facility openFacility(String facilityId) {
